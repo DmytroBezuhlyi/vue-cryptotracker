@@ -120,7 +120,6 @@
 <script>
 export default {
   name: "App",
-
   data() {
     return {
       ticker: '',
@@ -129,16 +128,10 @@ export default {
       graph: [],
     };
   },
-
-  mounted() {
-    this.focusTickerInput();
-  },
-
   methods: {
     focusTickerInput() {
       this.$refs.tickerInput.focus();
     },
-
     add() {
       if (this.ticker.length && !this.tickers.find(t => t.name === this.ticker)) {
         const currentTicker = {
@@ -148,35 +141,30 @@ export default {
 
         this.tickers.push(currentTicker);
 
-        const fetchInterval = setInterval(async () => {
-          if (this.tickers.length) {
-            const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0}`);
-            const data = await f.json();
+        localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
-            if (data.Response === 'Error') {
-              this.showNotification('section', 'Something goes wrong');
-              clearInterval(fetchInterval);
-            } else {
-              this.tickers.find(t => t.name === currentTicker.name).price = data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
-
-              if (this.sel?.name === currentTicker.name) {
-                this.graph.push(data.USD);
-              }
-            }
-          } else {
-            clearInterval(fetchInterval);
-          }
-        }, 3000);
-        this.ticker = '';
+        this.subscribeToUpdates(currentTicker.name);
       } else if (this.tickers.find(t => t.name === this.ticker)) {
         this.showNotification('section', 'Chosen currency has already existed');
       }
     },
+    subscribeToUpdates(tickerName) {
+      setInterval(async () => {
+        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0}`);
+        const data = await f.json();
 
+        this.tickers.find(t => t.name === tickerName).price = data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+
+        if (this.sel?.name === tickerName) {
+          this.graph.push(data.USD);
+        }
+      }, 3000);
+      this.ticker = '';
+    },
     handleDelete(tickerToRemove) {
       this.tickers = this.tickers.filter(t => t !== tickerToRemove);
+      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
     },
-
     showNotification(selector, message) {
       document.querySelector(`${selector}`).insertAdjacentHTML('afterend', `
         <div id="existence-modal">
@@ -188,19 +176,30 @@ export default {
         document.querySelector('#existence-modal').remove();
       }, 3000);
     },
-
     normalizeGraph() {
       const maxValue = Math.max(...this.graph);
       const minValue = Math.min(...this.graph);
 
       return this.graph.map(price => 5 + (price - minValue) * 95 / (maxValue - minValue));
     },
-
     select(t) {
       this.sel = t;
       this.graph = [];
     }
-  }
+  },
+  created() {
+    const tickersData = localStorage.getItem('tickers-list');
+
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach(t => {
+        this.subscribeToUpdates(t.name);
+      });
+    }
+  },
+  mounted() {
+    this.focusTickerInput();
+  },
 };
 </script>
 
