@@ -205,9 +205,7 @@ export default {
       this.ticker = '';
     },
     handleDelete(tickerToRemove) {
-      console.log(this.filteredTickers.length);
-      console.log(this.page);
-      if (this.filteredTickers.length === 1 && this.page > 1) {
+      if (this.tickers.length % this.pageTickers === 1 && this.page > 1) {
         this.page--;
       }
 
