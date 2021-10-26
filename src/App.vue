@@ -15,7 +15,7 @@
                   id="wallet"
                   class=" block w-full pr-10 border-gray-300 text-gray-900 focus:outline-none focus:ring-gray-500 focus:border-gray-500 sm:text-sm rounded-md"
                   placeholder="DOGE e.g."
-                  v-model="ticker"
+                  v-model.trim="ticker"
                   @keypress.enter="add"
                   ref="tickerInput"
               />
@@ -45,6 +45,25 @@
       </section>
 
       <template v-if="tickers.length">
+        <hr class="w-full border-t border-gray-600"/>
+        <div>
+          <button
+              class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              :disabled="page < 2"
+              @click="page -= 1"
+          >
+            Back
+          </button>
+          <span class="current-page">{{ page }} of {{ pageCount }}</span>
+          <button
+              class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              :disabled="!hasNextPage"
+              @click="page += 1"
+          >
+            Next
+          </button>
+        </div>
+        <div>Filter: <input v-model.trim="filter"/></div>
         <hr class="w-full border-t border-gray-600 my-4"/>
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
@@ -52,7 +71,7 @@
               :class="{
                 'sel' : sel === t
               }"
-              v-for="t in tickers"
+              v-for="t in filteredTickers()"
               :key="t.name"
               @click="select(t)"
           >
@@ -126,31 +145,55 @@ export default {
       tickers: [],
       sel: null,
       graph: [],
+      page: 1,
+      pageTickers: 6,
+      pageCount: 1,
+      filter: '',
+      hasNextPage: true,
     };
   },
   methods: {
+    filteredTickers() {
+      const start = (this.page - 1) * this.pageTickers;
+      const end = this.page * this.pageTickers;
+      const filteredTickers = this.tickers.filter(t => t.name.includes(this.filter.toUpperCase()));
+
+      this.hasNextPage = filteredTickers.length > end;
+      this.pageCount = Math.ceil(this.tickers.length / this.pageTickers);
+
+      return filteredTickers.slice(start, end);
+    },
     focusTickerInput() {
       this.$refs.tickerInput.focus();
     },
-    add() {
-      if (this.ticker.length && !this.tickers.find(t => t.name === this.ticker)) {
+    async add() {
+      if (this.ticker.length && !this.tickers.find(t => t.name === this.ticker.toUpperCase())) {
         const currentTicker = {
           name: this.ticker.toUpperCase(),
           price: '-'
         };
 
-        this.tickers.push(currentTicker);
+        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
+        const data = await f.json();
 
-        localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+        if (data.USD) {
+          this.tickers.push(currentTicker);
 
-        this.subscribeToUpdates(currentTicker.name);
-      } else if (this.tickers.find(t => t.name === this.ticker)) {
-        this.showNotification('section', 'Chosen currency has already existed');
+          this.filter = '';
+
+          localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+
+          this.subscribeToUpdates(currentTicker.name);
+        } else {
+          this.showNotification('section', `There is no any coins with name <strong>${this.ticker}</strong>`);
+        }
+      } else if (this.tickers.find(t => t.name === this.ticker.toUpperCase())) {
+        this.showNotification('section', 'Chosen currency has been exists');
       }
     },
     subscribeToUpdates(tickerName) {
       setInterval(async () => {
-        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0}`);
+        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
         const data = await f.json();
 
         this.tickers.find(t => t.name === tickerName).price = data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
@@ -162,6 +205,12 @@ export default {
       this.ticker = '';
     },
     handleDelete(tickerToRemove) {
+      console.log(this.filteredTickers.length);
+      console.log(this.page);
+      if (this.filteredTickers.length === 1 && this.page > 1) {
+        this.page--;
+      }
+
       this.tickers = this.tickers.filter(t => t !== tickerToRemove);
       localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
     },
@@ -187,7 +236,27 @@ export default {
       this.graph = [];
     }
   },
+  watch: {
+    filter() {
+      this.page = 1;
+
+      history.pushState(null, document.title, `${location.pathname}?filter=${this.filter}&page=${this.page}`);
+    },
+    page() {
+      history.pushState(null, document.title, `${location.pathname}?filter=${this.filter}&page=${this.page}`);
+    },
+  },
   created() {
+    const windowData = Object.fromEntries(new URL(window.location).searchParams.entries());
+
+    if (windowData.filter) {
+      this.filter = windowData.filter;
+    }
+
+    if (windowData.page) {
+      this.page = +windowData.page;
+    }
+
     const tickersData = localStorage.getItem('tickers-list');
 
     if (tickersData) {
@@ -206,5 +275,18 @@ export default {
 <style>
 .sel {
   outline: 1px ridge #553c9a;
+}
+
+button[disabled] {
+  opacity: .75;
+}
+
+button[disabled]:hover {
+  opacity: .75;
+  background-color: rgba(75, 85, 99, var(--tw-bg-opacity));
+}
+
+.current-page {
+  margin: 0 1.5rem;
 }
 </style>
