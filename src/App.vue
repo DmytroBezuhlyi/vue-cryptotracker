@@ -204,7 +204,6 @@ export default {
 };
 </script>
 
-<style src="./app.css"></style>
 <style>
 .sel {
   outline: 1px ridge #553c9a;
