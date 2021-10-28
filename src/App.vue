@@ -150,6 +150,7 @@ export default {
       pageCount: 1,
       filter: '',
       hasNextPage: true,
+      sockets: [],
     };
   },
   methods: {
@@ -192,16 +193,33 @@ export default {
       }
     },
     subscribeToUpdates(tickerName) {
-      setInterval(async () => {
-        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
-        const data = await f.json();
+      const apiKey = "6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0";
+      const ccStreamer = new WebSocket('wss://streamer.cryptocompare.com/v2?api_key=' + apiKey);
 
-        this.tickers.find(t => t.name === tickerName).price = data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+      this.sockets.push({id: tickerName, ws: ccStreamer});
 
-        if (this.sel?.name === tickerName) {
-          this.graph.push(data.USD);
+      const ticker = this.tickers.find(t => t.name === tickerName);
+
+      ccStreamer.onopen = function onStreamOpen() {
+        const subRequest = {
+          "action": "SubAdd",
+          "subs": [`5~CCCAGG~${tickerName.toUpperCase()}~USD`],
+        };
+        ccStreamer.send(JSON.stringify(subRequest));
+      };
+
+      ccStreamer.onmessage = () => {
+        let message = JSON.parse(event.data);
+
+        if (message.TYPE === "5" && message.PRICE !== undefined) {
+          ticker.price = message.PRICE;
+
+          if (this.sel?.name === tickerName) {
+            this.graph.push(message.PRICE);
+          }
         }
-      }, 3000);
+      };
+
       this.ticker = '';
     },
     handleDelete(tickerToRemove) {
@@ -209,7 +227,15 @@ export default {
         this.page--;
       }
 
+      this.sockets.find(s => {
+        if (s.id === tickerToRemove.name) {
+          s.ws.close();
+        }
+      });
+
+      this.sockets = this.sockets.filter(s => s.name !== tickerToRemove.name);
       this.tickers = this.tickers.filter(t => t !== tickerToRemove);
+
       localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
     },
     showNotification(selector, message) {
