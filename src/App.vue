@@ -174,17 +174,23 @@ export default {
           price: '-'
         };
 
-        const f = await fetch(`https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
+        const f = await fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${currentTicker.name}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
         const data = await f.json();
 
-        if (data.USD) {
+        const CM = data.RAW[`${currentTicker.name}`].USD.MARKET;
+
+        currentTicker.coinMarket = CM;
+
+        console.log(currentTicker);
+
+        if (CM) {
           this.tickers.push(currentTicker);
 
           this.filter = '';
 
           localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
-          this.subscribeToUpdates(currentTicker.name);
+          this.subscribeToUpdates(currentTicker.name, CM);
         } else {
           this.showNotification('section', `There is no any coins with name <strong>${this.ticker}</strong>`);
         }
@@ -192,7 +198,7 @@ export default {
         this.showNotification('section', 'Chosen currency has been exists');
       }
     },
-    subscribeToUpdates(tickerName) {
+    subscribeToUpdates(tickerName, coinMarket) {
       const apiKey = "6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0";
       const ccStreamer = new WebSocket('wss://streamer.cryptocompare.com/v2?api_key=' + apiKey);
 
@@ -203,7 +209,7 @@ export default {
       ccStreamer.onopen = function onStreamOpen() {
         const subRequest = {
           "action": "SubAdd",
-          "subs": [`5~CCCAGG~${tickerName.toUpperCase()}~USD`],
+          "subs": [`5~${coinMarket}~${tickerName.toUpperCase()}~USD`],
         };
         ccStreamer.send(JSON.stringify(subRequest));
       };
@@ -211,7 +217,7 @@ export default {
       ccStreamer.onmessage = () => {
         let message = JSON.parse(event.data);
 
-        if (message.TYPE === "5" && message.PRICE !== undefined) {
+        if (message.PRICE) {
           ticker.price = message.PRICE;
 
           if (this.sel?.name === tickerName) {
@@ -286,7 +292,7 @@ export default {
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
       this.tickers.forEach(t => {
-        this.subscribeToUpdates(t.name);
+        this.subscribeToUpdates(t.name, t.coinMarket);
       });
     }
   },
