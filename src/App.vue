@@ -177,20 +177,19 @@ export default {
         const f = await fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${currentTicker.name}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
         const data = await f.json();
 
-        const CM = data.RAW[`${currentTicker.name}`].USD.MARKET;
+        if (data.Response !== 'Error') {
+          const res = data.RAW[`${currentTicker.name}`].USD;
 
-        currentTicker.coinMarket = CM;
+          currentTicker.coinMarket = res.MARKET;
+          currentTicker.subType = res.TYPE;
 
-        console.log(currentTicker);
-
-        if (CM) {
           this.tickers.push(currentTicker);
 
           this.filter = '';
 
           localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
-          this.subscribeToUpdates(currentTicker.name, CM);
+          this.subscribeToUpdates(currentTicker.subType, currentTicker.coinMarket, currentTicker.name);
         } else {
           this.showNotification('section', `There is no any coins with name <strong>${this.ticker}</strong>`);
         }
@@ -198,7 +197,7 @@ export default {
         this.showNotification('section', 'Chosen currency has been exists');
       }
     },
-    subscribeToUpdates(tickerName, coinMarket) {
+    subscribeToUpdates(type = 5, coinMarket, tickerName) {
       const apiKey = "6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0";
       const ccStreamer = new WebSocket('wss://streamer.cryptocompare.com/v2?api_key=' + apiKey);
 
@@ -209,7 +208,7 @@ export default {
       ccStreamer.onopen = function onStreamOpen() {
         const subRequest = {
           "action": "SubAdd",
-          "subs": [`5~${coinMarket}~${tickerName.toUpperCase()}~USD`],
+          "subs": [`${type}~${coinMarket}~${tickerName}~USD`],
         };
         ccStreamer.send(JSON.stringify(subRequest));
       };
@@ -292,7 +291,7 @@ export default {
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
       this.tickers.forEach(t => {
-        this.subscribeToUpdates(t.name, t.coinMarket);
+        this.subscribeToUpdates(t.subType, t.coinMarket, t.name);
       });
     }
   },
