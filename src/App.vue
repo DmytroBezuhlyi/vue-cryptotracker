@@ -57,7 +57,7 @@
           <span class="current-page">{{ page }} of {{ pageCount }}</span>
           <button
               class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-              :disabled="!hasNextPage"
+              :disabled="hasNextPage"
               @click="page += 1"
           >
             Next
@@ -69,9 +69,9 @@
           <div
               class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
               :class="{
-                'sel' : sel === t
+                'selectedTicker' : selectedTicker === t
               }"
-              v-for="t in filteredTickers()"
+              v-for="t in paginatedTickers"
               :key="t.name"
               @click="select(t)"
           >
@@ -85,7 +85,7 @@
             <button
                 class=" flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
                 @click.stop="handleDelete(t)"
-                @click="sel === t ? sel = null : ''"
+                @click="selectedTicker === t ? selectedTicker = null : ''"
             >
               <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#718096"
                    aria-hidden="true">
@@ -104,22 +104,22 @@
 
       <section
           class="relative"
-          v-if="sel"
+          v-if="selectedTicker"
       >
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-          {{ sel.name }} - USD
+          {{ selectedTicker.name }} - USD
         </h3>
         <div class="flex items-end border-gray-600 border-b border-l h-64">
           <div
               class="bg-purple-800 border w-10"
-              v-for="(bar, idx) in normalizeGraph()"
+              v-for="(bar, idx) in normalizedGraph"
               :key="idx"
               :style="{ height: `${bar}%` }"
           ></div>
         </div>
         <button
             type="button" class="absolute top-0 right-0"
-            @click="sel = null"
+            @click="selectedTicker = null"
         >
           <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
                xmlns:svgjs="http://svgjs.com/svgjs" version="1.1" width="30" height="30" x="0" y="0"
@@ -143,27 +143,15 @@ export default {
     return {
       ticker: '',
       tickers: [],
-      sel: null,
+      selectedTicker: null,
       graph: [],
       page: 1,
       pageTickers: 6,
-      pageCount: 1,
       filter: '',
-      hasNextPage: true,
       sockets: [],
     };
   },
   methods: {
-    filteredTickers() {
-      const start = (this.page - 1) * this.pageTickers;
-      const end = this.page * this.pageTickers;
-      const filteredTickers = this.tickers.filter(t => t.name.includes(this.filter.toUpperCase()));
-
-      this.hasNextPage = filteredTickers.length > end;
-      this.pageCount = Math.ceil(this.tickers.length / this.pageTickers);
-
-      return filteredTickers.slice(start, end);
-    },
     focusTickerInput() {
       this.$refs.tickerInput.focus();
     },
@@ -171,7 +159,6 @@ export default {
       if (this.ticker.length && !this.tickers.find(t => t.name === this.ticker.toUpperCase())) {
         const currentTicker = {
           name: this.ticker.toUpperCase(),
-          price: '-'
         };
 
         const f = await fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${currentTicker.name}&tsyms=USD&api_key=6b204b21e1333ad7d3dc3f00fd4896ca15888c08da2915a78f9f0e9276bb1fc0`);
@@ -182,12 +169,13 @@ export default {
 
           currentTicker.coinMarket = res.MARKET;
           currentTicker.subType = res.TYPE;
+          currentTicker.price = res.PRICE;
 
           this.tickers.push(currentTicker);
 
           this.filter = '';
 
-          localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+          // localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
 
           this.subscribeToUpdates(currentTicker.subType, currentTicker.coinMarket, currentTicker.name);
         } else {
@@ -219,7 +207,7 @@ export default {
         if (message.PRICE) {
           ticker.price = message.PRICE;
 
-          if (this.sel?.name === tickerName) {
+          if (this.selectedTicker?.name === tickerName) {
             this.graph.push(message.PRICE);
           }
         }
@@ -228,10 +216,6 @@ export default {
       this.ticker = '';
     },
     handleDelete(tickerToRemove) {
-      if (this.tickers.length % this.pageTickers === 1 && this.page > 1) {
-        this.page--;
-      }
-
       this.sockets.find(s => {
         if (s.id === tickerToRemove.name) {
           s.ws.close();
@@ -241,7 +225,7 @@ export default {
       this.sockets = this.sockets.filter(s => s.name !== tickerToRemove.name);
       this.tickers = this.tickers.filter(t => t !== tickerToRemove);
 
-      localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+      // localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
     },
     showNotification(selector, message) {
       document.querySelector(`${selector}`).insertAdjacentHTML('afterend', `
@@ -254,25 +238,62 @@ export default {
         document.querySelector('#existence-modal').remove();
       }, 3000);
     },
-    normalizeGraph() {
+    select(t) {
+      this.selectedTicker = t;
+    }
+  },
+  computed: {
+    startIdx() {
+      return (this.page - 1) * 6;
+    },
+    endIdx() {
+      return this.page * 6;
+    },
+    pageCount() {
+      return Math.ceil(this.tickers.length / this.pageTickers);
+    },
+    filteredTickers() {
+      return this.tickers.filter(t => t.name.includes(this.filter.toUpperCase()));
+    },
+    paginatedTickers() {
+      return this.filteredTickers.slice(this.startIdx, this.endIdx);
+    },
+    hasNextPage() {
+      return this.paginatedTickers.length > this.endIdx;
+    },
+    normalizedGraph() {
       const maxValue = Math.max(...this.graph);
       const minValue = Math.min(...this.graph);
 
       return this.graph.map(price => 5 + (price - minValue) * 95 / (maxValue - minValue));
     },
-    select(t) {
-      this.sel = t;
-      this.graph = [];
+    pageStateOptions() {
+      return {
+        filter: this.filter,
+        page: this.page,
+      };
     }
   },
   watch: {
+    selectedTicker() {
+      this.graph = [];
+    },
+    paginatedTickers() {
+      if (this.paginatedTickers.length === 0 && this.page > 1) {
+        this.page -= 1;
+      }
+    },
     filter() {
       this.page = 1;
-
-      history.pushState(null, document.title, `${location.pathname}?filter=${this.filter}&page=${this.page}`);
     },
-    page() {
-      history.pushState(null, document.title, `${location.pathname}?filter=${this.filter}&page=${this.page}`);
+    pageStateOptions(v) {
+      history.pushState(null, document.title, `${location.pathname}?filter=${v.filter}&page=${v.page}`);
+    },
+    tickers: {
+      deep: true,
+      handler() {
+        localStorage.setItem('tickers-list', JSON.stringify(this.tickers));
+      }
     },
   },
   created() {
@@ -302,7 +323,7 @@ export default {
 </script>
 
 <style>
-.sel {
+.selectedTicker {
   outline: 1px ridge #553c9a;
 }
 
